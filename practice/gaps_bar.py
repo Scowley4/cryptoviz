@@ -5,7 +5,7 @@ import sys
 
 from bokeh.layouts import gridplot
 from bokeh.plotting import figure, show, output_file, save
-from bokeh.models import HoverTool, ColumnDataSource
+from bokeh.models import HoverTool, ColumnDataSource, WheelZoomTool
 from bokeh.embed import components
 from bokeh.models import Range1d
 
@@ -36,53 +36,70 @@ for line in lines:
 min_trade = min(df[df['Start_trade_id']>0]['Start_trade_id'].min(), min(gap[0] for gap in gaps))
 max_trade = max(df['End_trade_id'].max(), max(gap[1] for gap in gaps))
 
-bars = []
-indicator = []
+trade_ids = []
+indicators = []
 missing = set(num for gap in gaps for num in range(gap[0], gap[1]+1))
 for i in range(min_trade, max_trade+1):
-    continue
+    trade_ids.append(i)
+    indicators.append(i not in missing)
 
+quads = []
+cur_indicator = indicators[0]
+quad_left = trade_ids[0]
+quad_indicators = []
+i = 0
+while i < len(trade_ids):
+    if indicators[i] == cur_indicator:
+        quad_right = trade_ids[i]
+    if indicators[i] != cur_indicator or i==len(trade_ids)-1:
+        quad_indicators.append(cur_indicator)
+        quads.append((quad_left, quad_right))
+        quad_left = trade_ids[i]
+        quad_right = trade_ids[i]
+        cur_indicator = indicators[i]
+    i += 1
+TOOLS = 'save,pan,box_zoom,xwheel_zoom,reset'
 
-gap_sizes = get_gap_sizes(gaps)
-
-
-sys.exit()
-
-
-centers = (edges[:-1]+edges[1:])/2
-width = abs(centers[0]-centers[1])
-
-TOOLS = 'save,pan,box_zoom,wheel_zoom,reset'
-
-left = min(centers)*.75
-right = max(centers)*1.2
-top = max(hist)*1.2
-bottom = 0
+left = min_trade-100
+right = max_trade+100
+top = 1.2
+bottom = -.2
 x_range = Range1d(start=left, end=right, bounds=(left,right))
 y_range = Range1d(start=bottom, end=top, bounds=(bottom,top))
 
-p1 = figure(title=filename, tools=TOOLS,
+p = figure(title=filename, tools=TOOLS,
+            plot_width=1000,
+            plot_height=300,
             x_range=x_range,
-            y_range=y_range,
-            active_scroll='wheel_zoom', background_fill_color='#E8DDCB')
+           # y_range=y_range,
+            active_scroll='xwheel_zoom',
+            toolbar_location='above',
+            background_fill_color='#E8DDCB')
+#p.add_tools(WheelZoomTool(dimensions='width'))
 
 source = ColumnDataSource(data={
-            'count': hist,
-            'center': centers,
-            'left': edges[:-1],
-            'right': edges[1:]})
+            'quad_left': [quad[0] for quad in quads],
+            'quad_right': [quad[1]+1 for quad in quads],
+            'top': [1 for x in quads],
+            'bottom': [0 for x in quads],
+            'range': quads,
+            'fill': ['blue' if x else 'red' for x in quad_indicators],
+            'indicator': quad_indicators
+            })
 
-p1.vbar(x='center', top='count', width=width, source=source,
-       line_color='white', fill_color='black', hover_line_color='grey')
-p1.legend.location='center_right'
-p1.legend.background_fill_color = 'darkgrey'
-p1.xaxis.axis_label = 'Gap size'
-p1.yaxis.axis_label = 'Count'
-p1.add_tools(HoverTool(tooltips=[#('Value', '$x{1.1111}'),
-                                 ('Range', '@left{1.1}-@right{1.1}'),
-                                 ('Count', '@count'),
-                                 ]))
+p.quad(top='top', bottom='bottom', left='quad_left', right='quad_right',
+       fill_color='fill',source=source)
 
-output_file('gap_test1.html')
+p.legend.location='center_right'
+p.legend.background_fill_color = 'darkgrey'
+p.xaxis.axis_label = 'trade_id'
+#p.yaxis.axis_label = 'Count'
+p.yaxis.visible = False
+p.add_tools(HoverTool(tooltips=[('trade_ids', '@range'),
+                                #('missing', '@indicator'),
+                                ]))
 
-show(p1)
+output_file('gap_bar_test.html')
+
+show(p)
+
