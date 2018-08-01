@@ -49,9 +49,9 @@ margin: 50px 100px;
   background-color: var(--nav-active);
 }
 .sub-nav ul {
-  overflow: visible;
   overflow: hidden;
   background-color: var(--main-bg-color);
+  padding: 0px 5px 0px 30px;
 }
 
 .sub-nav li {
