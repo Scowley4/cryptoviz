@@ -7,26 +7,44 @@
 </head>
 
 <body>
-<div class="nav">
-  <ul>
-    <li><a class="active" href="#">something</a></li>
-    <li><a href="#">something</a></li>
-    <li><a href="#">something</a></li>
-    <li><a href="#">something</a></li>
-  </ul>
-</div>
-<div class="nav sub-nav">
-  <ul>
-    <li><a class="active" href="#">asdfasdfasdf</a></li>
-    <li><a href="#">qwefas</a></li>
-    <li><a href="#">qwer</a></li>
-    <li><a href="#">qwerqwert</a></li>
-  </ul>
-</div>
-<div class="content">
-~~~CONTENT~~~
-</div>
+  <div class="nav">
+    <ul>
+      <li><a id="1" onclick="openTab(event, '1')" class="tablink active">something</a></li>
+      <li><a id="2" onclick="openTab(event, '2')" class="tablink">something</a></li>
+      <li><a id="3" onclick="openTab(event, '3')" class="tablink">something</a></li>
+      <li><a id="4" onclick="openTab(event, '4')" class="tablink">something</a></li>
+    </ul>
+  </div>
+  <div class="nav sub-nav">
+    <ul>
+      <li><a class="active" href="#">asdfasdfasdf</a></li>
+      <li><a href="#">qwefas</a></li>
+      <li><a href="#">qwer</a></li>
+      <li><a href="#">qwerqwert</a></li>
+    </ul>
+  </div>
+  <div class="content">
+  ~~~CONTENT~~~
+  </div>
 </body>
+<script>
+  function openTab(evt, tabName){
+    var i, tabcontent, tablinks;
+    tabcontent = document.getElementsByClassName('tabcontent');
+    for (i=0; i<tabcontent.length; i++) {
+      tabcontent[i].style.display = "none";
+    }
+    tablinks = document.getElementsByClassName("tablink");
+    for (i=0; i<tablinks.length; i++){
+      tablinks[i].className = tablinks[i].className.replace(" active", "");
+    }
+    document.getElementById(tabName).style.display = "block";
+    evt.currentTarget.className += " active";
+  }
+  function myfunc(){
+    console.log('success');
+  }
+</script>
 
 </html>
 
