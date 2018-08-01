@@ -1,0 +1,66 @@
+html{
+  --main-bg-color: #0F1414;
+  --nav-bg-color: #273332;
+  --nav-click: #080A0A;
+  --nav-hover: #161E1E;
+  --nav-text: #519397;
+  --nav-active: #3B4E4E;
+}
+body {
+  margin: 0;
+  background-color: var(--main-bg-color);
+}
+.nav{
+}
+.nav ul {
+  margin: 0;
+  padding: 5px 5px 0px 30px;
+  overflow: hidden;
+  list-style-type: none;
+  background-color: var(--nav-bg-color);
+}
+
+.nav li {
+  float: left;
+}
+
+.nav li > a {
+  color: var(--nav-text);
+  text-color: var(--nav-text);
+  display: block;
+  text-align: center;
+  padding: 14px 16px;
+  text-decoration: none;
+  border-radius: 2px 2px 2px 2px;
+}
+
+.nav a:hover:not(.active) {
+  background-color: var(--nav-hover);
+}
+
+.nav a.active{
+  background-color: var(--nav-active);
+}
+.sub-nav ul {
+  overflow: visible;
+}
+
+.sub-nav li {
+  float: left;
+  border-radius: 0px 0px 10px 10px;
+}
+
+.sub-nav li > a {
+  display: block;
+  text-align: center;
+  padding: 14px 16px;
+  text-decoration: none;
+  border-radius: 0px 0px 10px 10px;
+}
+
+.sub-nav a:hover:not(.active) {
+}
+
+.sub-nav a.active{
+}
+
