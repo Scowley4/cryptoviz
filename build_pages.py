@@ -9,9 +9,9 @@ from bs4 import BeautifulSoup
 from bokeh.layouts import gridplot
 import bokeh.plotting as bplot
 from bokeh.models import HoverTool, ColumnDataSource, WheelZoomTool, NumeralTickFormatter
-from bokeh.models import CategoricalTicker
+from bokeh.models import CategoricalTicker, Range1d
 from bokeh.embed import components
-from bokeh.models import Range1d
+from bokeh.transform import jitter
 from bokeh.palettes import Spectral6
 
 C_TITLE = '#4FB3B7'
@@ -24,6 +24,7 @@ C_BUY = '#117E1A'
 C_SELL = '#7B1111'
 C_MISSING = '#7B1111'
 CHART_TITLE_SIZE = '16pt'
+C_BAR_HOVER_LINE = None
 
 DATA_FOLDER = './data/new_data/Output/'
 
@@ -62,6 +63,7 @@ def _apply_figure_styles(p, **kwargs):
     p.title.text_font_style = kwargs.get('title.text_font_style', 'bold')
     p.title.text_font_size = kwargs.get('title.text_font_size', CHART_TITLE_SIZE)
 
+
 class EveryOtherTicker(CategoricalTicker):
     __implementation__ = """
     import {CategoricalTicker} from "models/tickers/categorical_ticker"
@@ -78,81 +80,13 @@ class EveryOtherTicker(CategoricalTicker):
         return ticks
     """
 
+
 def _parse_gap(line):
     if 'to' in line:
         split = line.split(' to ')
         return int(split[0]), int(split[1])
     else:
         return int(line), int(line)
-
-
-def delay_histogram(filename):
-    full_filename = os.path.join(OUTPUTDATA_FOLDER, filename)
-    bins = 10
-
-    with open(full_filename, 'r') as infile:
-        lines = infile.readlines()[2:]
-
-    def parse_delay(line):
-        if 'second' in line:
-            number = line.split('+')[0].split(' ')[0]
-            count = line.split(': ')[1]
-            return {int(number):int(count)}
-
-    def get_delays_hist(delays):
-        hist = []
-        edges = []
-        for i in range(61):
-            edges.append(i)
-            hist.append(delays.get(i, 0))
-        edges.append(61)
-        return np.array(hist), np.array(edges)
-
-    delays = {}
-    for line in lines:
-        delays.update(parse_delay(line))
-
-    hist, edges = get_delays_hist(delays)
-
-    centers = (edges[:-1]+edges[1:])/2
-    width = abs(centers[0]-centers[1])
-
-    tools = 'save,pan,box_zoom,wheel_zoom,reset'
-
-    left = min(centers)*.75
-    right = max(centers)*1.2
-    top = max(hist)*1.2
-    bottom = 0
-    x_range = Range1d(start=left, end=right, bounds=(left,right))
-    y_range = Range1d(start=bottom, end=top, bounds=(bottom,top))
-
-    p = bplot.figure(title=filename, tools=tools,
-                width=1000,
-                x_range=x_range,
-                y_range=y_range,
-                active_scroll='wheel_zoom', background_fill_color=C_CHART_BG)
-
-    source = ColumnDataSource(data={
-                'count': hist,
-                'center': centers,
-                'left': edges[:-1],
-                'right': edges[1:]})
-
-    p.vbar(x='center', top='count', width=width, source=source,
-           line_color='white', fill_color='black', hover_line_color='grey')
-    p.legend.location='center_right'
-    p.legend.background_fill_color = 'darkgrey'
-    p.xaxis.axis_label = 'Delay time'
-    p.yaxis.axis_label = 'Count'
-    p.add_tools(HoverTool(tooltips=[#('Value', '$x{1.1111}'),
-                                     ('Range', '@left{1.1}-@right{1.1}'),
-                                     ('Count', '@count'),
-                                     ]))
-
-    bplot.output_file('delay_test.html')
-
-    bplot.show(p)
-
 
 
 def build_gaps_block(path, product_id, output_file=None, show=False):
@@ -379,6 +313,60 @@ def build_delays_histogram(path, product_id, output_file=None, show=False):
         bplot.show(p)
     return p
 
+    styles={}
+    _apply_figure_styles(p, **styles)
+    if output_file:
+        bplot.output_file(output_file)
+        bplot.save(p)
+    if show:
+        bplot.show(p)
+    return p
+
+def build_trade_scatter(path, product_id, output_file=None, show=False):
+    product_df = pd.read_csv(path, index_col=None,
+                             parse_dates=['server_datetime',
+                                          'exchange_datetime'])
+
+    # Get the weekday and time
+    product_df['weekday_name'] = product_df['exchange_datetime'].dt.weekday_name
+    product_df['time'] = product_df['exchange_datetime'].dt.time
+
+    # Setting color based on buy/sell
+    color_map = {'sell': C_SELL, 'buy': C_BUY}
+    product_df['color'] = [color_map[entry] for entry in product_df['side']]
+
+
+    DAYS = ['Sunday', 'Saturday', 'Friday', 'Thursday', 'Wednesday', 'Tuesday',
+    'Monday']
+
+    source = ColumnDataSource(product_df)
+
+    TOOLS = 'save,pan,box_zoom,xwheel_zoom,reset'
+    p = bplot.figure(title='Trades', tools=TOOLS,
+               plot_width=800,
+               plot_height=300,
+               y_range=DAYS,
+               active_scroll='xwheel_zoom',
+               x_axis_type='datetime',
+               background_fill_color=C_CHART_BG
+               )
+
+    p.circle(x='time', y=jitter('weekday_name', width=0.6, range=p.y_range),
+             source=source, alpha=0.6, fill_color='color')
+
+    p.xaxis[0].formatter.days = ['%Hh']
+
+    p.x_range.range_padding = 0
+
+    styles={}
+    _apply_figure_styles(p, **styles)
+    if output_file:
+        bplot.output_file(output_file)
+        bplot.save(p)
+    if show:
+        bplot.show(p)
+    return p
+
 
 def bundle_files(soup, css_files, js_files, write=False):
     """Bundle all files into one"""
@@ -437,7 +425,7 @@ for product_id in product_ids:
                                  output_file='test_bars.html', show=True)
         product_figures[product_id]['gaps_bar_graph'] = p
         sys.exit()
-    if True:
+    if False:
         # Delays histogram
         full_filepath = os.path.join(DATA_FOLDER, '03_'+product_id+'_TIME_DELAY.txt')
         p = build_delays_histogram(full_filepath, product_id,
@@ -449,6 +437,11 @@ for product_id in product_ids:
         pass
     if True:
         # Trade scatter plot
+        full_filepath = os.path.join(DATA_FOLDER, product_id+'.csv')
+        p = build_trade_scatter(full_filepath, product_id,
+                                output_file='scatter.html', show=True)
+        product_figures[product_id]['trade_scatter'] = p
+        sys.exit()
         pass
 
 
