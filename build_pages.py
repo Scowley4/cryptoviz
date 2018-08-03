@@ -9,8 +9,10 @@ from bs4 import BeautifulSoup
 from bokeh.layouts import gridplot
 import bokeh.plotting as bplot
 from bokeh.models import HoverTool, ColumnDataSource, WheelZoomTool, NumeralTickFormatter
+from bokeh.models import CategoricalTicker
 from bokeh.embed import components
 from bokeh.models import Range1d
+from bokeh.palettes import Spectral6
 
 C_TITLE = '#4FB3B7'
 C_TEXT = '#4FB3B7'
@@ -60,6 +62,21 @@ def _apply_figure_styles(p, **kwargs):
     p.title.text_font_style = kwargs.get('title.text_font_style', 'bold')
     p.title.text_font_size = kwargs.get('title.text_font_size', CHART_TITLE_SIZE)
 
+class EveryOtherTicker(CategoricalTicker):
+    __implementation__ = """
+    import {CategoricalTicker} from "models/tickers/categorical_ticker"
+
+    export class EveryOtherTicker extends CategoricalTicker
+      type: "EveryOtherTicker"
+
+      get_ticks: (start, end, range, cross_loc) ->
+        ticks = super(start, end, range, cross_loc)
+
+        # drops every other tick -- update to suit your specific needs
+        ticks.major = ticks.major.filter((element, index) -> index % 2 == 0)
+
+        return ticks
+    """
 
 def _parse_gap(line):
     if 'to' in line:
@@ -100,7 +117,7 @@ def delay_histogram(filename):
     centers = (edges[:-1]+edges[1:])/2
     width = abs(centers[0]-centers[1])
 
-    TOOLS = 'save,pan,box_zoom,wheel_zoom,reset'
+    tools = 'save,pan,box_zoom,wheel_zoom,reset'
 
     left = min(centers)*.75
     right = max(centers)*1.2
@@ -109,7 +126,7 @@ def delay_histogram(filename):
     x_range = Range1d(start=left, end=right, bounds=(left,right))
     y_range = Range1d(start=bottom, end=top, bounds=(bottom,top))
 
-    p = bplot.figure(title=filename, tools=TOOLS,
+    p = bplot.figure(title=filename, tools=tools,
                 width=1000,
                 x_range=x_range,
                 y_range=y_range,
@@ -181,7 +198,7 @@ def build_gaps_block(path, product_id, output_file=None, show=False):
         i += 1
 
     # Tools
-    TOOLS = 'save,xpan,box_zoom,xwheel_zoom,reset'
+    tools = 'save,xpan,box_zoom,xwheel_zoom,reset'
 
     # Set window range
     span = max_trade_id - min_trade_id
@@ -195,7 +212,7 @@ def build_gaps_block(path, product_id, output_file=None, show=False):
     x_range = Range1d(start=left, end=right, bounds=(left,right))
     y_range = Range1d(start=bottom, end=top, bounds=(bottom,top))
 
-    p = bplot.figure(title=filename, tools=TOOLS,
+    p = bplot.figure(title=filename, tools=tools,
                 plot_width=1000,
                 plot_height=300,
                 x_range=x_range,
@@ -213,7 +230,8 @@ def build_gaps_block(path, product_id, output_file=None, show=False):
                 'range_left': [quad[0] for quad in quads],
                 'range_right': [quad[1] for quad in quads],
                 'fill': [C_BAR if x else C_MISSING for x in quad_indicators],
-                'indicator': quad_indicators
+                'indicator': quad_indicators,
+                'size': [quad[1]-quad[0]+1 for quad in quads],
                 })
 
     p.quad(top='top', bottom='bottom', left='quad_left', right='quad_right',
@@ -221,7 +239,9 @@ def build_gaps_block(path, product_id, output_file=None, show=False):
 
     p.xaxis.axis_label = 'trade_id'
     p.yaxis.visible = False
-    p.add_tools(HoverTool(tooltips=[('trade_ids', '@range_left - @range_right')]))
+    p.add_tools(HoverTool(tooltips=[('trade_ids', '@range_left - @range_right'),
+                                    ('size', '@size'),
+                                   ]))
 
     # Numbers formatted as ints on the x-axis
     p.xaxis[0].formatter = NumeralTickFormatter(format='0'*len(str(min_trade_id)))
@@ -237,6 +257,127 @@ def build_gaps_block(path, product_id, output_file=None, show=False):
         bplot.show(p)
     return p
 
+def build_gaps_bar_graph(path, product_id, output_file=None, show=False):
+
+    # Open and read the file into lines
+    with open(path, 'r') as infile:
+        lines = [line.strip() for line in infile.readlines()]
+
+    # Get min and max from the range line
+    line = lines[1][len('Range: ('):-1]
+    split = line.split(', ')
+    min_trade_id = int(split[0])
+    max_trade_id = int(split[1])
+
+    # Get gaps
+    gaps = []
+    for line in lines[3:]:
+        gaps.append(_parse_gap(line))
+
+    gap_sizes = sorted([gap[1]-gap[0]+1 for gap in gaps],reverse=True)
+
+    # Tools
+    tools = 'save,xpan,box_zoom,xwheel_zoom,reset'
+
+    numbers = [str(i+1) for i in range(len(gap_sizes))]
+
+    p = bplot.figure(title=filename, tools=tools,
+                x_range=numbers,
+                plot_width=1000,
+                plot_height=300,
+                active_scroll='xwheel_zoom',
+                toolbar_location='above',
+                background_fill_color=C_CHART_BG,
+                )
+
+    source = ColumnDataSource(data={
+                'xlabel': numbers,
+                'size': gap_sizes,
+                })
+
+
+    p.vbar(x='xlabel', top='size', width=.8, legend=False, source=source)
+
+
+    if len(numbers)>50:
+        p.xaxis.ticker = EveryOtherTicker()
+
+    p.xaxis.axis_label = 'Gap Count'
+    p.add_tools(HoverTool(tooltips=[('Gap Size', '@size')]))
+
+    # Apply desired styles
+    styles = {'xgrid.grid_line_color': None}
+    _apply_figure_styles(p, **styles)
+
+    if output_file:
+        bplot.output_file(output_file)
+        bplot.save(p)
+    if show:
+        bplot.show(p)
+    return p
+
+
+def build_delays_histogram(path, product_id, output_file=None, show=False):
+
+    with open(path, 'r') as infile:
+        lines = infile.readlines()[1:]
+
+    # Parse the delays
+    delays = {int(line.split('+')[0].split(' ')[0]): int(line.split(': ')[1])
+                for line in [l.strip() for l in lines if 'second' in l]}
+
+    # Build hist edges and heights
+    edges = np.arange(62)
+    hist = np.array([delays.get(i, 0) for i in range(61)])
+
+    centers = (edges[:-1]+edges[1:])/2
+    width = abs(centers[0]-centers[1])
+
+    tools = 'save,pan,box_zoom,wheel_zoom,reset'
+
+    span = max(centers) - min(centers)
+    space = span*.05
+    left = max(min(centers)-space, 0)
+    right = max(centers)+space
+    top = max(hist)*1.2
+    bottom = 0
+    x_range = Range1d(start=left, end=right, bounds=(left,right))
+    y_range = Range1d(start=bottom, end=top, bounds=(bottom,top))
+
+    p = bplot.figure(title='Delay Duration Between Server and Exchange Datetime',
+                tools=tools,
+                width=1000,
+                x_range=x_range,
+                y_range=y_range,
+                active_scroll='wheel_zoom',
+                background_fill_color=C_CHART_BG)
+
+    source = ColumnDataSource(data={
+                'count': hist,
+                'center': centers,
+                'left': edges[:-1],
+                'right': edges[1:],
+                'label': [f'{int(edges[i])}-{int(edges[i+1])}' if i<60 else '60+'
+                          for i in range(61)],
+            })
+
+    p.vbar(x='center', top='count', width=width, source=source,
+           line_color=None, hover_line_color='grey')
+    p.xaxis.axis_label = 'Delay Duration (sec)'
+    p.yaxis.axis_label = 'Count'
+    p.add_tools(HoverTool(tooltips=[#('Value', '$x{1.1111}'),
+                                     ('Range', '@label'),
+                                     ('Count', '@count'),
+                                     ]))
+
+    styles={}
+    _apply_figure_styles(p, **styles)
+    if output_file:
+        bplot.output_file(output_file)
+        bplot.save(p)
+    if show:
+        bplot.show(p)
+    return p
 
 
 def bundle_files(soup, css_files, js_files, write=False):
@@ -268,11 +409,51 @@ for filename in datafiles:
     if pattern.match(filename):
         product_ids.append(filename[:-4])
 
+product_figures = {}
+
 for product_id in product_ids:
-    full_filepath = os.path.join(DATA_FOLDER, '02_'+product_id+'_TRADE_ID_GAPS.txt')
-    p = build_gaps_block(full_filepath, product_id, output_file='test.html', show=True)
+
+    product_figures[product_id] = {}
 
 
+    if False:
+        # gaps_block
+        full_filepath = os.path.join(DATA_FOLDER, '02_'+product_id+'_TRADE_ID_GAPS.txt')
+        p = build_gaps_block(full_filepath, product_id, output_file='test.html', show=True)
+        product_figures[product_id]['gaps_block'] = p
+        sys.exit()
+
+    if False:
+        # gaps bar graph
+        full_filepath = os.path.join(DATA_FOLDER, '02_'+product_id+'_TRADE_ID_GAPS.txt')
+        p = build_gaps_bar_graph(full_filepath, product_id,
+                                 output_file='test_bars.html', show=True)
+        product_figures[product_id]['gaps_bar_graph'] = p
+
+    if False:
+        # Distributions
+        full_filepath = os.path.join(DATA_FOLDER, '02_'+product_id+'_TRADE_ID_GAPS.txt')
+        p = build_gaps_bar_graph(full_filepath, product_id,
+                                 output_file='test_bars.html', show=True)
+        product_figures[product_id]['gaps_bar_graph'] = p
+        sys.exit()
+    if True:
+        # Delays histogram
+        full_filepath = os.path.join(DATA_FOLDER, '03_'+product_id+'_TIME_DELAY.txt')
+        p = build_delays_histogram(full_filepath, product_id,
+                                   output_file='test_delays.html', show=True)
+        product_figures[product_id]['delays_histogram'] = p
+        sys.exit()
+    if True:
+        # Delays scatter plot
+        pass
+    if True:
+        # Trade scatter plot
+        pass
+
+
+
+sys.exit()
 
 
 
