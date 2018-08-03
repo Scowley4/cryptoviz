@@ -61,6 +61,14 @@ def _apply_figure_styles(p, **kwargs):
     p.title.text_font_size = kwargs.get('title.text_font_size', CHART_TITLE_SIZE)
 
 
+def _parse_gap(line):
+    if 'to' in line:
+        split = line.split(' to ')
+        return int(split[0]), int(split[1])
+    else:
+        return int(line), int(line)
+
+
 def delay_histogram(filename):
     full_filename = os.path.join(OUTPUTDATA_FOLDER, filename)
     bins = 10
@@ -88,9 +96,6 @@ def delay_histogram(filename):
         delays.update(parse_delay(line))
 
     hist, edges = get_delays_hist(delays)
-
-    #hist, edges = np.histogram(gap_sizes, bins=bins)
-
 
     centers = (edges[:-1]+edges[1:])/2
     width = abs(centers[0]-centers[1])
@@ -133,35 +138,24 @@ def delay_histogram(filename):
 
 
 
-def build_gaps_bar(path, product_id, output_file=None, show=False):
-    #df = pd.read_csv(path, index_col=None,
-    #                 parse_dates=['server_datetime',
-    #                              'exchange_datetime'])
-    #return df
+def build_gaps_block(path, product_id, output_file=None, show=False):
 
+    # Open and read the file into lines
     with open(path, 'r') as infile:
         lines = [line.strip() for line in infile.readlines()]
 
-    def parse_gap(line):
-        if 'to' in line:
-            split = line.split(' to ')
-            return int(split[0]), int(split[1])
-        else:
-            return int(line), int(line)
-    def parse_range(line):
-        line = line[len('Range: ('):-1]
-        split = line.split(', ')
-        return int(split[0]), int(split[1])
+    # Get min and max from the range line
+    line = lines[1][len('Range: ('):-1]
+    split = line.split(', ')
+    min_trade_id = int(split[0])
+    max_trade_id = int(split[1])
 
-    def get_gap_sizes(gaps):
-        return [gap[1]-gap[0]+1 for gap in gaps]
-
-    min_trade_id, max_trade_id = parse_range(lines[1])
-
+    # Get gaps
     gaps = []
     for line in lines[3:]:
-        gaps.append(parse_gap(line))
+        gaps.append(_parse_gap(line))
 
+    # Get assignment for each trade id (missing or not)
     trade_ids = []
     indicators = []
     missing = set(num for gap in gaps for num in range(gap[0], gap[1]+1))
@@ -169,6 +163,7 @@ def build_gaps_bar(path, product_id, output_file=None, show=False):
         trade_ids.append(i)
         indicators.append(i not in missing)
 
+    # Group into missing and not missing
     quads = []
     cur_indicator = indicators[0]
     quad_left = trade_ids[0]
@@ -184,26 +179,21 @@ def build_gaps_bar(path, product_id, output_file=None, show=False):
             quad_right = trade_ids[i]
             cur_indicator = indicators[i]
         i += 1
+
+    # Tools
     TOOLS = 'save,xpan,box_zoom,xwheel_zoom,reset'
 
+    # Set window range
     span = max_trade_id - min_trade_id
     space = span*.05
     left = min_trade_id-space
     right = max_trade_id+space
     top = 1.2
     bottom = -.2
+
+    # Set window range (For some reason, y_range isn't working right)
     x_range = Range1d(start=left, end=right, bounds=(left,right))
     y_range = Range1d(start=bottom, end=top, bounds=(bottom,top))
-
-# C_TITLE = '#4FB3B7'
-# C_TEXT = '#4FB3B7'
-# C_AXES = '#519397'
-# C_CHART_BG = '#111818'
-# C_LEGEND_BG = 'red'
-# C_BAR = '#355AA6'
-# C_BUY = '#117E1A'
-# C_SELL = '#7B1111'
-# C_MISSING = '#7B1111'
 
     p = bplot.figure(title=filename, tools=TOOLS,
                 plot_width=1000,
@@ -233,11 +223,13 @@ def build_gaps_bar(path, product_id, output_file=None, show=False):
     p.yaxis.visible = False
     p.add_tools(HoverTool(tooltips=[('trade_ids', '@range_left - @range_right')]))
 
+    # Numbers formatted as ints on the x-axis
     p.xaxis[0].formatter = NumeralTickFormatter(format='0'*len(str(min_trade_id)))
 
+    # Apply desired styles
     styles = {'ygrid.grid_line_color': None}
-
     _apply_figure_styles(p, **styles)
+
     if output_file:
         bplot.output_file(output_file)
         bplot.save(p)
@@ -278,7 +270,7 @@ for filename in datafiles:
 
 for product_id in product_ids:
     full_filepath = os.path.join(DATA_FOLDER, '02_'+product_id+'_TRADE_ID_GAPS.txt')
-    p = build_gaps_bar(full_filepath, product_id, output_file='test.html', show=True)
+    p = build_gaps_block(full_filepath, product_id, output_file='test.html', show=True)
 
 
 
