@@ -38,7 +38,8 @@ def _apply_figure_styles(p, **kwargs):
             'xgrid.grid_line_color', 'ygrid.grid_line_color',
             'xaxis.major_label_text_color', 'yaxis.major_label_text_color',
             'xaxis.axis_label_text_color', 'yaxis.axis_label_text_color',
-            'title.text_color', 'title.text_font_style', 'title.text_font_size', ]
+            'title.text_color', 'title.text_font_style', 'title.text_font_size',
+            'background_fill_color', 'border_fill_color',]
     for key in kwargs:
         if key not in keys:
             print(f'key "{key}" not recognized')
@@ -62,6 +63,18 @@ def _apply_figure_styles(p, **kwargs):
     p.title.text_color = kwargs.get('title.text_color', C_TITLE)
     p.title.text_font_style = kwargs.get('title.text_font_style', 'bold')
     p.title.text_font_size = kwargs.get('title.text_font_size', CHART_TITLE_SIZE)
+
+    #p.background_fill_alpha = 0
+    p.background_fill_color = kwargs.get('background_fill_color', C_CHART_BG)
+
+    p.border_fill_color = kwargs.get('border_fill_color', C_CHART_BG)
+    p.border_fill_alpha = 0
+
+    #p.outline_line_width
+    #p.outline_line_alpha
+    p.outline_line_color = None
+
+
 
 
 class EveryOtherTicker(CategoricalTicker):
@@ -146,7 +159,7 @@ def build_gaps_block(path, product_id, output_file=None, show=False):
     x_range = Range1d(start=left, end=right, bounds=(left,right))
     y_range = Range1d(start=bottom, end=top, bounds=(bottom,top))
 
-    p = bplot.figure(title=filename, tools=tools,
+    p = bplot.figure(title='Gaps in trade ids', tools=tools,
                 plot_width=1000,
                 plot_height=300,
                 x_range=x_range,
@@ -215,13 +228,12 @@ def build_gaps_bar_graph(path, product_id, output_file=None, show=False):
 
     numbers = [str(i+1) for i in range(len(gap_sizes))]
 
-    p = bplot.figure(title=filename, tools=tools,
+    p = bplot.figure(title='Missing Trade Ids', tools=tools,
                 x_range=numbers,
                 plot_width=1000,
                 plot_height=300,
                 active_scroll='xwheel_zoom',
                 toolbar_location='above',
-                background_fill_color=C_CHART_BG,
                 )
 
     source = ColumnDataSource(data={
@@ -313,6 +325,53 @@ def build_delays_histogram(path, product_id, output_file=None, show=False):
         bplot.show(p)
     return p
 
+def get_distribution_histograms(path, product_id, output_file=None, show=False):
+    df = pd.read_csv(path, index_col=None,
+                     parse_dates=['Start_exchange_datetime',
+                                  'End_exchange_datetime'])
+    distributions = []
+    for col in df.columns:
+        if (df[col].dtype == 'float64'
+            and all(df[col]>=0)
+            and all(df[col]<=1)
+            and (not (col[0].isnumeric()) or col[:2]=='01')):
+
+            #distributions[col] = build_distribution_histogram(df[col],
+            #            output_file='testdist.html', show=True)
+            #break
+            distributions.append((col, build_distribution_histogram(df[col])))
+    return distributions
+
+def build_distribution_histogram(data, output_file=None, show=False):
+    BINS=50
+
+    hist, edges = np.histogram(data, bins=BINS)
+
+    tools = 'save,pan,box_zoom,wheel_zoom,reset'
+    p = bplot.figure(title=data.name, tools=tools,
+                    active_scroll='wheel_zoom',
+                    background_fill_color=C_CHART_BG)
+
+    centers = (edges[:-1]+edges[1:])/2
+    width = abs(centers[0]-centers[1])
+
+    # p.quad(top=hist, bottom=0, left=edges[:-1], right=edges[1:],
+    #         fill_color='#036564', line_color='#033649')
+    source = ColumnDataSource(data={
+                'count':hist,
+                'centers':centers,
+                'label': [f'{round(edges[i], 3)}-{round(edges[i+1], 3)}' for i in range(BINS)],
+                })
+
+    p.vbar(x='centers', top='count',
+           width=width, source=source,
+           hover_line_color='grey')
+    p.legend.location='center_right'
+    p.legend.background_fill_color = 'darkgrey'
+    #p.xaxis.axis_label = 'x'
+    #p.yaxis.axis_label = 'P(x)'
+    p.add_tools(HoverTool(tooltips=[('Range', '@label'), ('Count', '@count')]))
+
     styles={}
     _apply_figure_styles(p, **styles)
     if output_file:
@@ -336,16 +395,18 @@ def build_trade_scatter(path, product_id, output_file=None, show=False):
     product_df['color'] = [color_map[entry] for entry in product_df['side']]
 
 
-    DAYS = ['Sunday', 'Saturday', 'Friday', 'Thursday', 'Wednesday', 'Tuesday',
-    'Monday']
+    # Days reversed so they will be in order top to bottom
+    days = ['Sunday', 'Saturday', 'Friday',
+            'Thursday', 'Wednesday', 'Tuesday',
+            'Monday']
 
     source = ColumnDataSource(product_df)
 
-    TOOLS = 'save,pan,box_zoom,xwheel_zoom,reset'
-    p = bplot.figure(title='Trades', tools=TOOLS,
+    tools = 'save,pan,box_zoom,xwheel_zoom,reset'
+    p = bplot.figure(title='Trades', tools=tools,
                plot_width=800,
                plot_height=300,
-               y_range=DAYS,
+               y_range=days,
                active_scroll='xwheel_zoom',
                x_axis_type='datetime',
                background_fill_color=C_CHART_BG
@@ -383,7 +444,7 @@ def bundle_files(soup, css_files, js_files, write=False):
         soup.body.insert_after(tag)
 
     if write:
-        with open('outfile.html', 'w') as outfile:
+        with open('realtest.html', 'w') as outfile:
             outfile.write(soup.prettify())
 
 
@@ -401,49 +462,86 @@ product_figures = {}
 
 for product_id in product_ids:
 
-    product_figures[product_id] = {}
-
-
-    if False:
+    if True:
         # gaps_block
         full_filepath = os.path.join(DATA_FOLDER, '02_'+product_id+'_TRADE_ID_GAPS.txt')
-        p = build_gaps_block(full_filepath, product_id, output_file='test.html', show=True)
-        product_figures[product_id]['gaps_block'] = p
-        sys.exit()
-
-    if False:
+        p = build_gaps_block(full_filepath, product_id,)
+                            #output_file='test.html', show=True)
+        product_figures[f'{product_id}~~gaps_block'] = p
+    if True:
         # gaps bar graph
         full_filepath = os.path.join(DATA_FOLDER, '02_'+product_id+'_TRADE_ID_GAPS.txt')
-        p = build_gaps_bar_graph(full_filepath, product_id,
-                                 output_file='test_bars.html', show=True)
-        product_figures[product_id]['gaps_bar_graph'] = p
-
-    if False:
+        p = build_gaps_bar_graph(full_filepath, product_id,)
+                                # output_file='test_bars.html', show=True)
+        product_figures[f'{product_id}~~gaps_bar_graph'] = p
+    if True:
         # Distributions
-        full_filepath = os.path.join(DATA_FOLDER, '02_'+product_id+'_TRADE_ID_GAPS.txt')
-        p = build_gaps_bar_graph(full_filepath, product_id,
-                                 output_file='test_bars.html', show=True)
-        product_figures[product_id]['gaps_bar_graph'] = p
-        sys.exit()
-    if False:
+        full_filepath = os.path.join(DATA_FOLDER, '08_'+product_id+'_1_FINAL.csv')
+
+        distributions = get_distribution_histograms(full_filepath, product_id)
+
+        for key, val in distributions:
+            product_figures[f'{product_id}~~disthist~~{key}']=val
+    if True:
         # Delays histogram
         full_filepath = os.path.join(DATA_FOLDER, '03_'+product_id+'_TIME_DELAY.txt')
-        p = build_delays_histogram(full_filepath, product_id,
-                                   output_file='test_delays.html', show=True)
-        product_figures[product_id]['delays_histogram'] = p
-        sys.exit()
-    if True:
+        p = build_delays_histogram(full_filepath, product_id,)
+                                  # output_file='test_delays.html', show=True)
+        product_figures[f'{product_id}~~delays_histogram'] = p
+    if False:
         # Delays scatter plot
-        pass
+        full_filepath = os.path.join(DATA_FOLDER, product_id+'.csv')
+        p = build_delay_scatter(full_filepath, product_id,)
+                               # output_file='scatter.html', show=True)
+        product_figures[f'{product_id}~~trade_scatter'] = p
     if True:
         # Trade scatter plot
         full_filepath = os.path.join(DATA_FOLDER, product_id+'.csv')
-        p = build_trade_scatter(full_filepath, product_id,
-                                output_file='scatter.html', show=True)
-        product_figures[product_id]['trade_scatter'] = p
-        sys.exit()
-        pass
+        p = build_trade_scatter(full_filepath, product_id,)
+                               # output_file='scatter.html', show=True)
+        product_figures[f'{product_id}~~trade_scatter'] = p
 
+
+script, divs = components(product_figures)
+#script, divs = components({'graph': product_figures['USDT_BTC~~gaps_block']})
+
+template = 'templates/frame.html'
+template = './templates/empty_test.html'
+with open(template) as infile:
+    soup = BeautifulSoup(infile.read(), 'html.parser')
+
+
+soup.html.append(BeautifulSoup(script, 'html.parser'))
+
+for name, div in divs.items():
+    soup.find(class_='content').append(BeautifulSoup(div, 'html.parser'))
+
+
+css_files = ['./practice/sub_tab_test/bokehjs/bokeh-0.13.0.min.css',
+'./practice/sub_tab_test/styles.css']
+js_files = ['./practice/sub_tab_test/bokehjs/bokeh-0.13.0.min.js']
+bundle_files(soup, css_files, js_files, write=True)
+
+
+
+
+#    """Bundle all files into one"""
+#    for filename in css_files:
+#        tag = soup.new_tag('style')
+#        with open(filename, 'r') as infile:
+#            tag.append(infile.read())
+#        soup.head.append(tag)
+#
+#    for filename in js_files:
+#        tag = soup.new_tag('script')
+#        with open(filename, 'r') as infile:
+#            tag.append(infile.read())
+#        soup.body.insert_after(tag)
+#
+#    if write:
+#        with open('outfile.html', 'w') as outfile:
+#            outfile.write(soup.prettify())
+#
 
 
 sys.exit()
