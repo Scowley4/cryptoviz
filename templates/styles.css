@@ -5,13 +5,20 @@ html{
   --nav-hover: #161E1E;
   --nav-text: #519397;
   --nav-active: #3B4E4E;
+  --text: #519397;
 }
 body {
   margin: 0;
   background-color: var(--main-bg-color);
 }
+
+#main-content {
+margin: 50px 100px;
+}
+
 .nav{
 }
+
 .nav ul {
   margin: 0;
   padding: 5px 5px 0px 30px;
@@ -43,6 +50,9 @@ body {
 }
 .sub-nav ul {
   overflow: visible;
+  overflow: hidden;
+  background-color: var(--main-bg-color);
+  padding: 0px 5px 0px 30px;
 }
 
 .sub-nav li {
@@ -63,4 +73,16 @@ body {
 
 .sub-nav a.active{
 }
+.tab-content{
+  color: var(--text);
+}
+.tabcontent{
+  color: var(--text);
+}
+
+
+
+
+
+
 

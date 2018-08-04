@@ -27,6 +27,7 @@ CHART_TITLE_SIZE = '16pt'
 C_BAR_HOVER_LINE = None
 
 DATA_FOLDER = './data/new_data/Output/'
+DATA_FOLDER = './data/new_data2/Output/'
 
 PAGES = './pages'
 
@@ -330,7 +331,7 @@ def get_distribution_histograms(path, product_id, output_file=None, show=False):
                      parse_dates=['Start_exchange_datetime',
                                   'End_exchange_datetime'])
     distributions = []
-    for col in df.columns:
+    for i, col in enumerate(df.columns):
         if (df[col].dtype == 'float64'
             and all(df[col]>=0)
             and all(df[col]<=1)
@@ -339,7 +340,7 @@ def get_distribution_histograms(path, product_id, output_file=None, show=False):
             #distributions[col] = build_distribution_histogram(df[col],
             #            output_file='testdist.html', show=True)
             #break
-            distributions.append((col, build_distribution_histogram(df[col])))
+            distributions.append((f'{i}~~{col}', build_distribution_histogram(df[col])))
     return distributions
 
 def build_distribution_histogram(data, output_file=None, show=False):
@@ -349,8 +350,10 @@ def build_distribution_histogram(data, output_file=None, show=False):
 
     tools = 'save,pan,box_zoom,wheel_zoom,reset'
     p = bplot.figure(title=data.name, tools=tools,
-                    active_scroll='wheel_zoom',
-                    background_fill_color=C_CHART_BG)
+                     plot_width=800,
+                     plot_height=300,
+                     active_scroll='wheel_zoom',
+                     background_fill_color=C_CHART_BG)
 
     centers = (edges[:-1]+edges[1:])/2
     width = abs(centers[0]-centers[1])
@@ -403,7 +406,7 @@ def build_trade_scatter(path, product_id, output_file=None, show=False):
     source = ColumnDataSource(product_df)
 
     tools = 'save,pan,box_zoom,xwheel_zoom,reset'
-    p = bplot.figure(title='Trades', tools=tools,
+    p = bplot.figure(title='Trades Over Time', tools=tools,
                plot_width=800,
                plot_height=300,
                y_range=days,
@@ -502,62 +505,119 @@ for product_id in product_ids:
         product_figures[f'{product_id}~~trade_scatter'] = p
 
 
+
 script, divs = components(product_figures)
 #script, divs = components({'graph': product_figures['USDT_BTC~~gaps_block']})
 
-template = 'templates/frame.html'
-template = './templates/empty_test.html'
+# Split up the divs into products
+product_divs = {product_id: {} for product_id in product_ids}
+for name, div in divs.items():
+    product_id, fig_name = name.split('~~', 1)
+    product_divs[product_id][fig_name] = BeautifulSoup(div, 'html.parser')
+
+subtabs = (('Gaps', ['gaps_block', 'gaps_bar_graph']),
+           ('Distributions', ['disthist']),
+           ('Delays', ['delays_histogram']),
+           ('Trades', ['trade_scatter']),
+          )
+
+template = './templates/final_frame.html'
 with open(template) as infile:
     soup = BeautifulSoup(infile.read(), 'html.parser')
 
 
+for product_id, figs in product_divs.items():
+    # Add the tab for product_id
+    li_tag = soup.new_tag('li')
+    a_tag = soup.new_tag('a', onclick=f"openTab(event, '{product_id}')",
+                        **{'class': 'tab-link'})
+    a_tag.append(product_id)
+    li_tag.append(a_tag)
+    soup.find(id='tabs').append(li_tag)
+
+    # tab = BeautifulSoup(f"""<li><a onclick="openTab(event, '{product_id}')"
+    #     class="tab-link">{product_id}</a></li>""", 'html.parser')
+    # soup.find(id='tabs').append(tab)
+
+    # Get the tabcontent
+    tab_content = soup.new_tag('div', id=product_id,
+                    **{'class': 'tab-content'})
+    for subtab_title, subtab_names in subtabs:
+        subtab_content = soup.new_tag('div',
+                      **{'class': f'subtab-content {subtab_title}'})
+        # subtab_div = BeautifulSoup(f"""<div class="subtab-content
+        # {subtab_title}"></div>""", 'html.parser')
+        divs = []
+        for name, div in figs.items():
+            for subtab_name in subtab_names:
+                if subtab_name in name:
+                    divs.append(div)
+        # sys.exit()
+        # divs = [BeautifulSoup(div, 'html.parser') for name, div in figs.items()
+        #         if any(subtab_name in name for subtab_name in subtab_names)]
+        for div in divs:
+            subtab_content.append(div)
+        tab_content.append(subtab_content)
+
+    # tab_content = BeautifulSoup(f"""<div id={product_id}
+    #     class="tab-content"></div>""", 'html.parser')
+    #tab_content.append(subtab_div)
+
+    soup.find(id='main-content').append(tab_content)
+
+for subtab_title, _ in subtabs:
+    li_tag = soup.new_tag('li')
+    a_tag = soup.new_tag('a', onclick=f"openSubtab(event, '{subtab_title}')",
+                        **{'class': 'subtab-link'})
+    a_tag.append(subtab_title)
+    li_tag.append(a_tag)
+    soup.find(id='subtabs').append(li_tag)
+
 soup.html.append(BeautifulSoup(script, 'html.parser'))
 
-for name, div in divs.items():
-    soup.find(class_='content').append(BeautifulSoup(div, 'html.parser'))
-
-
-css_files = ['./practice/sub_tab_test/bokehjs/bokeh-0.13.0.min.css',
-'./practice/sub_tab_test/styles.css']
-js_files = ['./practice/sub_tab_test/bokehjs/bokeh-0.13.0.min.js']
+css_files = ['./templates/bokehjs/bokeh-0.13.0.min.css',
+'templates/styles.css']
+js_files = ['./templates/bokehjs/bokeh-0.13.0.min.js']
 bundle_files(soup, css_files, js_files, write=True)
-
-
-
-
-#    """Bundle all files into one"""
-#    for filename in css_files:
-#        tag = soup.new_tag('style')
-#        with open(filename, 'r') as infile:
-#            tag.append(infile.read())
-#        soup.head.append(tag)
-#
-#    for filename in js_files:
-#        tag = soup.new_tag('script')
-#        with open(filename, 'r') as infile:
-#            tag.append(infile.read())
-#        soup.body.insert_after(tag)
-#
-#    if write:
-#        with open('outfile.html', 'w') as outfile:
-#            outfile.write(soup.prettify())
-#
 
 
 sys.exit()
 
+    # Add tab and tabcontent to soup
+
+#EARLY TESTING
+
+# template = 'templates/frame.html'
+# template = './templates/empty_test.html'
+# with open(template) as infile:
+#     soup = BeautifulSoup(infile.read(), 'html.parser')
+
+#
+# soup.html.append(BeautifulSoup(script, 'html.parser'))
+#
+# for name, div in divs.items():
+#     soup.find(class_='content').append(BeautifulSoup(div, 'html.parser'))
+#
+#
+# css_files = ['./practice/sub_tab_test/bokehjs/bokeh-0.13.0.min.css',
+# './practice/sub_tab_test/styles.css']
+# js_files = ['./practice/sub_tab_test/bokehjs/bokeh-0.13.0.min.js']
+# bundle_files(soup, css_files, js_files, write=True)
 
 
-filename = './practice/sub_tab_test/test_plots.html'
-with open(filename) as infile:
-    html = infile.read()
+#EARLY TESTING
 
-soup = BeautifulSoup(html, 'html.parser')
-
-css_files = ['./practice/sub_tab_test/bokehjs/bokeh-0.13.0.min.css',
-'./practice/sub_tab_test/styles.css']
-js_files = ['./practice/sub_tab_test/bokehjs/bokeh-0.13.0.min.js']
-#bundle_files(soup, css_files, js_files, write=True)
+# sys.exit()
+# filename = './practice/sub_tab_test/test_plots.html'
+# with open(filename) as infile:
+#     html = infile.read()
+#
+# soup = BeautifulSoup(html, 'html.parser')
+#
+# css_files = ['./practice/sub_tab_test/bokehjs/bokeh-0.13.0.min.css',
+# './practice/sub_tab_test/styles.css']
+# js_files = ['./practice/sub_tab_test/bokehjs/bokeh-0.13.0.min.js']
+# #bundle_files(soup, css_files, js_files, write=True)
 
 
 
