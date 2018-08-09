@@ -48,6 +48,8 @@ args=parser.parse_args()
 DATA_FOLDER = './data/new_data2/Output/'
 DATA_FOLDER = args.datafolder
 OUTFILE = args.outfile
+if not OUTFILE.endswith('.html'):
+    OUTFILE = OUTFILE+'.html'
 
 #os.makedirs(PAGES, exist_ok=True)
 if os.path.dirname(OUTFILE):
