@@ -5,6 +5,7 @@ import os
 import sys
 import contextlib
 from bs4 import BeautifulSoup
+import argparse
 
 from bokeh.layouts import gridplot
 import bokeh.plotting as bplot
@@ -26,12 +27,31 @@ C_MISSING = '#7B1111'
 CHART_TITLE_SIZE = '16pt'
 C_BAR_HOVER_LINE = None
 
-DATA_FOLDER = './data/new_data/Output/'
+#DATA_FOLDER = './data/new_data/Output/'
+#DATA_FOLDER = './data/new_data2/Output/'
+
+class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter):
+    pass
+parser=argparse.ArgumentParser(
+    description='Cryptoviz: Generates visualizations from cryptodata',
+    formatter_class=CustomFormatter)
+parser.add_argument('datafolder', metavar='datafolder',
+                    help='Path from current location to the folder output of analysis_script.py')
+parser.add_argument('outfile', metavar='outfile',
+                    help='Filename for output of this script (and folder if desired)')
+#parser.add_argument('-c', '--clean', action='store_true')
+args=parser.parse_args()
+
+
+
+#DATA_FOLDER = './data/new_data/Output/'
 DATA_FOLDER = './data/new_data2/Output/'
+DATA_FOLDER = args.datafolder
+OUTFILE = args.outfile
 
-PAGES = './pages'
-
-os.makedirs(PAGES, exist_ok=True)
+#os.makedirs(PAGES, exist_ok=True)
+if os.path.dirname(OUTFILE):
+    os.makedirs(os.path.dirname(OUTFILE), exist_ok=True)
 
 def _apply_figure_styles(p, **kwargs):
     keys = ['xaxis.major_tick_line_color', 'yaxis.major_tick_line_color',
@@ -41,9 +61,11 @@ def _apply_figure_styles(p, **kwargs):
             'xaxis.axis_label_text_color', 'yaxis.axis_label_text_color',
             'title.text_color', 'title.text_font_style', 'title.text_font_size',
             'background_fill_color', 'border_fill_color',]
+
     for key in kwargs:
         if key not in keys:
             print(f'key "{key}" not recognized')
+
     #p.legend.location='center_right'
     #p.legend.background_fill_color = 'darkgrey'
     p.xaxis.major_tick_line_color = kwargs.get('xaxis.major_tick_line_color', C_AXES)
@@ -71,6 +93,7 @@ def _apply_figure_styles(p, **kwargs):
     p.border_fill_color = kwargs.get('border_fill_color', C_CHART_BG)
     p.border_fill_alpha = 0
 
+    # The border around the whole chart (the background behind the toolbar)
     #p.outline_line_width
     #p.outline_line_alpha
     p.outline_line_color = None
@@ -243,7 +266,8 @@ def build_gaps_bar_graph(path, product_id, output_file=None, show=False):
                 })
 
 
-    p.vbar(x='xlabel', top='size', width=.8, legend=False, source=source)
+    p.vbar(x='xlabel', top='size', width=.8, legend=False, source=source,
+    color=C_BAR)
 
 
     if len(numbers)>50:
@@ -333,25 +357,33 @@ def get_distribution_histograms(path, product_id, output_file=None, show=False):
     distributions = []
     for i, col in enumerate(df.columns):
         if (df[col].dtype == 'float64'
-            and all(df[col]>=0)
-            and all(df[col]<=1)
-            and (not (col[0].isnumeric()) or col[:2]=='01')):
+           # and all(df[col]>=0)
+           # and all(df[col]<=1)
+            and (not (col[0].isnumeric()) or col[:2]=='01')
+            and not ('Vol_Slope' in col)
+            and not ('Area' in col)):
+
 
             #distributions[col] = build_distribution_histogram(df[col],
-            #            output_file='testdist.html', show=True)
-            #break
+            #            output_file='testdist.html', show=Truek
+            distributions.append((f'{i}~~{col}', build_distribution_histogram(df[col])))
+        elif (col in ['Buy_Area_01', 'Sell_Area_01',
+               'Buy_Vol_Slope_0001', 'Sell_Vol_Slope_0001',
+               'Buy_Vol_Slope_0102', 'Sell_Vol_Slope_0102']):
+
             distributions.append((f'{i}~~{col}', build_distribution_histogram(df[col])))
     return distributions
 
 def build_distribution_histogram(data, output_file=None, show=False):
     BINS=50
 
-    hist, edges = np.histogram(data, bins=BINS)
+    hist, edges = np.histogram(data.dropna(), bins=BINS)
 
     tools = 'save,pan,box_zoom,wheel_zoom,reset'
     p = bplot.figure(title=data.name, tools=tools,
-                     plot_width=800,
-                     plot_height=300,
+                     toolbar_location='above',
+                     plot_width=500,
+                     plot_height=200,
                      active_scroll='wheel_zoom',
                      background_fill_color=C_CHART_BG)
 
@@ -416,7 +448,7 @@ def build_trade_scatter(path, product_id, output_file=None, show=False):
                )
 
     p.circle(x='time', y=jitter('weekday_name', width=0.6, range=p.y_range),
-             source=source, alpha=0.6, fill_color='color')
+             source=source, alpha=0.6, fill_color='color', line_color=None)
 
     p.xaxis[0].formatter.days = ['%Hh']
 
@@ -432,7 +464,7 @@ def build_trade_scatter(path, product_id, output_file=None, show=False):
     return p
 
 
-def bundle_files(soup, css_files, js_files, write=False):
+def bundle_files(soup, css_files, js_files, write_filename=None):
     """Bundle all files into one"""
     for filename in css_files:
         tag = soup.new_tag('style')
@@ -446,8 +478,9 @@ def bundle_files(soup, css_files, js_files, write=False):
             tag.append(infile.read())
         soup.body.insert_after(tag)
 
-    if write:
-        with open('realtest.html', 'w') as outfile:
+    if filename:
+        print(f'Writing to {write_filename}')
+        with open(write_filename, 'w') as outfile:
             outfile.write(soup.prettify())
 
 
@@ -467,27 +500,29 @@ for product_id in product_ids:
 
     if True:
         # gaps_block
-        full_filepath = os.path.join(DATA_FOLDER, '02_'+product_id+'_TRADE_ID_GAPS.txt')
+        full_filepath = os.path.join(DATA_FOLDER, f'02_{product_id}_TRADE_ID_GAPS.txt')
         p = build_gaps_block(full_filepath, product_id,)
                             #output_file='test.html', show=True)
         product_figures[f'{product_id}~~gaps_block'] = p
     if True:
         # gaps bar graph
-        full_filepath = os.path.join(DATA_FOLDER, '02_'+product_id+'_TRADE_ID_GAPS.txt')
+        full_filepath = os.path.join(DATA_FOLDER, f'02_{product_id}_TRADE_ID_GAPS.txt')
         p = build_gaps_bar_graph(full_filepath, product_id,)
                                 # output_file='test_bars.html', show=True)
         product_figures[f'{product_id}~~gaps_bar_graph'] = p
     if True:
         # Distributions
-        full_filepath = os.path.join(DATA_FOLDER, '08_'+product_id+'_1_FINAL.csv')
-
+        for filename in os.listdir(DATA_FOLDER):
+            if filename.startswith(f'08_{product_id}'):
+                full_filepath = os.path.join(DATA_FOLDER, filename)
+                break
         distributions = get_distribution_histograms(full_filepath, product_id)
 
         for key, val in distributions:
             product_figures[f'{product_id}~~disthist~~{key}']=val
     if True:
         # Delays histogram
-        full_filepath = os.path.join(DATA_FOLDER, '03_'+product_id+'_TIME_DELAY.txt')
+        full_filepath = os.path.join(DATA_FOLDER, f'03_{product_id}_TIME_DELAY.txt')
         p = build_delays_histogram(full_filepath, product_id,)
                                   # output_file='test_delays.html', show=True)
         product_figures[f'{product_id}~~delays_histogram'] = p
@@ -578,7 +613,7 @@ soup.html.append(BeautifulSoup(script, 'html.parser'))
 css_files = ['./templates/bokehjs/bokeh-0.13.0.min.css',
 'templates/styles.css']
 js_files = ['./templates/bokehjs/bokeh-0.13.0.min.js']
-bundle_files(soup, css_files, js_files, write=True)
+bundle_files(soup, css_files, js_files, write_filename=OUTFILE)
 
 
 sys.exit()
